@@ -1,0 +1,101 @@
+name: NovaSphere - Terraform Apply
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: novasphere-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy-dev:
+    name: Deploy DEV
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.2
+          terraform_wrapper: false
+
+      - name: Configurer AWS
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Verifier AWS
+        run: aws sts get-caller-identity
+
+      - name: Variables DEV
+        run: cp infra/envs/dev/terraform.tfvars.example infra/envs/dev/env.auto.tfvars
+
+      - name: Terraform Init DEV
+        run: terraform -chdir=infra/envs/dev init -input=false
+
+      - name: Terraform Validate DEV
+        run: terraform -chdir=infra/envs/dev validate
+
+      - name: Terraform Plan DEV
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD_DEV }}
+        run: terraform -chdir=infra/envs/dev plan -input=false -out=tfplan
+
+      - name: Terraform Apply DEV
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD_DEV }}
+        run: terraform -chdir=infra/envs/dev apply -input=false tfplan
+
+  deploy-prod:
+    name: Deploy PROD
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.2
+          terraform_wrapper: false
+
+      - name: Configurer AWS
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Variables PROD
+        run: cp infra/envs/prod/terraform.tfvars.example infra/envs/prod/env.auto.tfvars
+
+      - name: Terraform Init PROD
+        run: terraform -chdir=infra/envs/prod init -input=false
+
+      - name: Terraform Validate PROD
+        run: terraform -chdir=infra/envs/prod validate
+
+      - name: Terraform Plan PROD
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD_PROD }}
+        run: terraform -chdir=infra/envs/prod plan -input=false -out=tfplan
+
+      - name: Terraform Apply PROD
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD_PROD }}
+        run: terraform -chdir=infra/envs/prod apply -input=false tfplan
