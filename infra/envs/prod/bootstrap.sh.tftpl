@@ -3,6 +3,17 @@ set -e
 dnf install -y httpd
 REGION="us-east-1"
 PARAM="/novasphere/${environment}/db_password"
-if aws ssm get-parameter --name "$PARAM" --with-decryption --region "$REGION" --query 'Parameter.Value' --output text >/dev/null 2>&1; then STATUS="OK"; else STATUS="INDISPONIBLE"; fi
+STATUS="INDISPONIBLE"
+
+for attempt in $(seq 1 12); do
+  if aws ssm get-parameter --name "$PARAM" --with-decryption --region "$REGION" --query 'Parameter.Name' --output text >/dev/null 2>&1; then
+    STATUS="OK"
+    break
+  fi
+
+  if [ "$attempt" -lt 12 ]; then
+    sleep 10
+  fi
+done
 echo "<h1>NovaSphere - ${environment}</h1><p>Instance : $(hostname)</p><p>Secret SSM : $STATUS</p>" > /var/www/html/index.html
 systemctl enable --now httpd
