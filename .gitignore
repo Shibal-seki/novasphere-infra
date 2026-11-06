@@ -7,3 +7,6 @@
 crash.log
 crash.*.log
 *.tfbackend
+
+# Modules externes telecharges par Checkov
+**/.external_modules/
