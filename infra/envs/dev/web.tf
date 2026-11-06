@@ -16,7 +16,7 @@ data "aws_iam_instance_profile" "lab" {
 
 # Module personnel publie sur GitHub
 module "web_stack" {
-  source = "git::https://github.com/Shibal-seki/terraform-aws-web-stack.git?ref=v1.0.0"
+  source = "git::https://github.com/Shibal-seki/terraform-aws-web-stack.git?ref=v1.1.0"
 
   name                  = "novasphere"
   environment           = var.environment
