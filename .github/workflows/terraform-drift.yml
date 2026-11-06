@@ -1,0 +1,66 @@
+name: NovaSphere - Terraform Drift
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Drift ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, prod]
+
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.2
+          terraform_wrapper: false
+
+      - name: Configurer AWS
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Preparer les variables
+        run: |
+          cp infra/envs/${{ matrix.environment }}/terraform.tfvars.example infra/envs/${{ matrix.environment }}/env.auto.tfvars
+
+      - name: Terraform Init
+        run: |
+          terraform -chdir=infra/envs/${{ matrix.environment }} init -input=false
+
+      - name: Detection de derive
+        env:
+          TF_VAR_db_password: "drift-check-placeholder"
+        run: |
+          RESULT=0
+
+          terraform -chdir=infra/envs/${{ matrix.environment }} plan \
+            -detailed-exitcode \
+            -no-color \
+            -input=false || RESULT=$?
+
+          if [ "$RESULT" -eq 0 ]; then
+            echo "Aucune derive detectee"
+          elif [ "$RESULT" -eq 2 ]; then
+            echo "::error::Changements detectes"
+            exit 2
+          else
+            echo "::error::Erreur Terraform ou AWS"
+            exit 1
+          fi
