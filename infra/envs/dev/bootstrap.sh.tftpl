@@ -1,0 +1,8 @@
+#!/bin/bash
+set -e
+dnf install -y httpd
+REGION="us-east-1"
+PARAM="/novasphere/${environment}/db_password"
+if aws ssm get-parameter --name "$PARAM" --with-decryption --region "$REGION" --query 'Parameter.Value' --output text >/dev/null 2>&1; then STATUS="OK"; else STATUS="INDISPONIBLE"; fi
+echo "<h1>NovaSphere - ${environment}</h1><p>Instance : $(hostname)</p><p>Secret SSM : $STATUS</p>" > /var/www/html/index.html
+systemctl enable --now httpd
