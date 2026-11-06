@@ -1,0 +1,108 @@
+name: NovaSphere - Terraform PR
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Format et validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.2
+          terraform_wrapper: false
+
+      - name: Verifier le format
+        run: |
+          terraform fmt -check -recursive infra/envs/dev
+          terraform fmt -check -recursive infra/envs/prod
+
+      - name: Initialiser DEV sans backend
+        run: terraform -chdir=infra/envs/dev init -backend=false -input=false
+
+      - name: Valider DEV
+        run: terraform -chdir=infra/envs/dev validate -no-color
+
+      - name: Initialiser PROD sans backend
+        run: terraform -chdir=infra/envs/prod init -backend=false -input=false
+
+      - name: Valider PROD
+        run: terraform -chdir=infra/envs/prod validate -no-color
+
+  plan-dev:
+    name: Plan Terraform DEV
+    needs: checks
+
+    # Secrets AWS seulement pour les PR de ton compte
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'Shibal-seki'
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.2
+          terraform_wrapper: false
+
+      - name: Configurer AWS Academy
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Preparer les variables DEV
+        run: |
+          cp infra/envs/dev/terraform.tfvars.example infra/envs/dev/env.auto.tfvars
+
+      - name: Initialiser Terraform DEV
+        run: terraform -chdir=infra/envs/dev init -input=false
+
+      - name: Generer le plan DEV
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD_DEV }}
+        run: |
+          set -o pipefail
+          terraform -chdir=infra/envs/dev plan -no-color -input=false | tee "$RUNNER_TEMP/plan.txt"
+
+      - name: Publier le plan en commentaire
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          {
+            echo "### NovaSphere - Terraform Plan DEV"
+            echo
+            echo "<details><summary>Afficher le plan Terraform</summary>"
+            echo
+            echo '```text'
+            head -c 45000 "$RUNNER_TEMP/plan.txt"
+            echo
+            echo '```'
+            echo "</details>"
+            echo
+            echo "**Resume :**"
+            grep -E '^Plan:|^No changes' "$RUNNER_TEMP/plan.txt" | tail -1
+          } > "$RUNNER_TEMP/comment.md"
+
+          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/comment.md"
